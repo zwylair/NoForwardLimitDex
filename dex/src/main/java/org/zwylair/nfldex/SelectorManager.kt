@@ -241,6 +241,7 @@ class SelectorManager {
 
     fun clearMessageStorage() {
         @Suppress("UNCHECKED_CAST")
-        (messagesArray as SparseArray<MessageObject>).clear()
+        (messagesArray as SparseArray<*>).clear()
+        (originalSparseArray as SparseArray<*>).clear()
     }
 }
