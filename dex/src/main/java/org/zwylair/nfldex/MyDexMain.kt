@@ -5,6 +5,8 @@ import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
 
 object PluginCore {
+    const val DEX_VERSION = "1.0.0b1"
+
     var pyArgs: Array<out Any?>? = null
     var pyRunnable: Runnable? = null
     var appContext: Context? = null
@@ -21,7 +23,7 @@ object PluginCore {
         this.pluginId = pluginId
 
         selectorHook.setupHook(checkPluginId(pluginId))
-        log("NoForwardLimitDex loaded.")
+        log("NoForwardLimitDex v$DEX_VERSION loaded.")
     }
 
     @Suppress("unused")
