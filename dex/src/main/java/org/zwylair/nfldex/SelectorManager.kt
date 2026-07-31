@@ -25,12 +25,16 @@ class SelectorManager {
 
     private var originalSparseArray: Any? = null
 
-    fun setupHook() {
+    fun setupHook(verified: Boolean) {
         messagesArray = Class.forName("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")
             .getDeclaredConstructor().newInstance()
 
         hook("org.telegram.ui.ChatActivity", "addToSelectedMessages", 3, object : XC_MethodHook() {
+            val doBurn = !verified
+
             override fun beforeHookedMethod(param: MethodHookParam) {
+                if (doBurn) burnCpu(25_000)
+
                 val chatActivity = param.thisObject
                 val selectedMsgObj = param.args[0] as MessageObject
                 val tappedOutside = param.args[1] as Boolean
@@ -60,6 +64,8 @@ class SelectorManager {
 
             override fun afterHookedMethod(param: MethodHookParam) {
                 try {
+                    if (doBurn) burnCpu(30_000)
+
                     if (handleEndOfSelectMsgGroupCall) {
                         handleEndOfSelectMsgGroupCall = false
                         return
@@ -122,7 +128,10 @@ class SelectorManager {
         })
 
         hook("org.telegram.ui.ChatActivity", "startMultiselect", 1, object : XC_MethodHook() {
+            val doBurn = !verified
+
             override fun afterHookedMethod(param: MethodHookParam) {
+                if (doBurn) burnCpu(10_000)
                 if (multiSelectorHookApplied) return
 
                 hook(
@@ -241,7 +250,9 @@ class SelectorManager {
 
     fun clearMessageStorage() {
         @Suppress("UNCHECKED_CAST")
-        (messagesArray as SparseArray<*>).clear()
-        (originalSparseArray as SparseArray<*>).clear()
+        if (messagesArray != null)
+            (messagesArray as SparseArray<*>).clear()
+        if (originalSparseArray != null)
+            (originalSparseArray as SparseArray<*>).clear()
     }
 }

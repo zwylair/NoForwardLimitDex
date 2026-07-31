@@ -8,18 +8,19 @@ object PluginCore {
     var pyArgs: Array<out Any?>? = null
     var pyRunnable: Runnable? = null
     var appContext: Context? = null
-
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
+    private var pluginId: String? = null
 
     val selectorHook = SelectorManager()
 
     @Suppress("unused")
     @JvmStatic
-    fun init(runnable: Runnable?, context: Context?) {
+    fun init(runnable: Runnable, context: Context, pluginId: String) {
         pyRunnable = runnable
         appContext = context
+        this.pluginId = pluginId
 
-        selectorHook.setupHook()
+        selectorHook.setupHook(checkPluginId(pluginId))
         log("NoForwardLimitDex loaded.")
     }
 
@@ -34,6 +35,7 @@ object PluginCore {
         log("NoForwardLimitDex unloaded.")
         pyRunnable = null
         appContext = null
+        this.pluginId = null
     }
 
     @JvmStatic
