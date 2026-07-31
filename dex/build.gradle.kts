@@ -1,8 +1,8 @@
-import java.util.Base64
-import java.util.zip.ZipFile
 import java.io.ByteArrayOutputStream
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Base64
 import java.util.zip.Deflater
+import java.util.zip.ZipFile
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm")
@@ -11,6 +11,7 @@ plugins {
 val telegramDir = file(providers.gradleProperty("telegram.dir").get())
 val androidSdkDir = file(providers.gradleProperty("android.sdk.dir").get())
 val compileSdkVersion = providers.gradleProperty("android.compile.sdk").get()
+val nflPath = providers.gradleProperty("nfl.plugin.path").get()
 
 val exteraHookAar = file("$telegramDir/Tools/maven/dev/exterahook/exterahook/0.2.3/exterahook-0.2.3.aar")
 val exteraHookJar = file("$projectDir/libs/exterahook-0.2.3.jar")
@@ -87,7 +88,6 @@ tasks.register<Exec>("buildDex") {
         if (dexFile.exists()) {
             val inputBytes = dexFile.readBytes()
 
-            // Настраиваем zlib-сжатие с максимальным уровнем (BEST_COMPRESSION = 9)
             val deflater = Deflater(Deflater.BEST_COMPRESSION)
             deflater.setInput(inputBytes)
             deflater.finish()
@@ -105,6 +105,19 @@ tasks.register<Exec>("buildDex") {
             val base64Dex = Base64.getEncoder().encodeToString(compressedBytes)
 
             println(base64Dex)
+
+            val targetFile = file(nflPath)
+            if (targetFile.exists()) {
+                val content = targetFile.readText()
+                val updatedContent = content.replace(
+                    Regex("""DEX_BASE64\s*=\s*".*?""""),
+                    """DEX_BASE64 = "$base64Dex""""
+                )
+                targetFile.writeText(updatedContent)
+                println("Успешно обновлено в ${targetFile.name}")
+            } else {
+                println("Файл ${targetFile.absolutePath} не найден!")
+            }
         }
     }
 }
