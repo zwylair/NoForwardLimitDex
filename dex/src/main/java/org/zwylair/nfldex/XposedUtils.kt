@@ -88,4 +88,5 @@ inline fun <reified T : Any> T.safeInvoke(methodName: String, argsCount: Int = 0
 fun clearReflectionCache() {
     methodsCache.clear()
     fieldsCache.clear()
+    classesCache.clear()
 }
