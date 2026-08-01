@@ -1,6 +1,10 @@
 import java.io.ByteArrayOutputStream
+import java.io.OutputStreamWriter
+import java.io.PrintWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Base64
-import java.util.zip.Deflater
+import java.util.Properties
 import java.util.zip.ZipFile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -8,10 +12,23 @@ plugins {
     kotlin("jvm")
 }
 
+val customPropertiesFile = project.rootProject.file("API_KEYS")
+val customProps = Properties()
+
+if (customPropertiesFile.exists()) {
+    customPropertiesFile.inputStream().use { stream ->
+        customProps.load(stream)
+    }
+} else {
+    logger.warn("Warning: API_KEYS file not found!")
+}
+
 val telegramDir = file(providers.gradleProperty("telegram.dir").get())
 val androidSdkDir = file(providers.gradleProperty("android.sdk.dir").get())
 val compileSdkVersion = providers.gradleProperty("android.compile.sdk").get()
 val nflPath = providers.gradleProperty("nfl.plugin.path").get()
+
+val botToken: String? = customProps.getProperty("telegram.bot.token")
 
 val exteraHookAar = file("$telegramDir/Tools/maven/dev/exterahook/exterahook/0.2.3/exterahook-0.2.3.aar")
 val exteraHookJar = file("$projectDir/libs/exterahook-0.2.3.jar")
@@ -64,6 +81,74 @@ val pluginJar = tasks.register<Jar>("pluginJar") {
     from(tasks.compileKotlin.get().destinationDirectory)
 }
 
+fun sendTelegramDocument(
+    token: String,
+    chatId: String,
+    file: File,
+    caption: String,
+    messageThreadId: String? = null
+) {
+    val boundary = "---GradleTelegramBoundary" + System.currentTimeMillis()
+    val lineFeed = "\r\n"
+    val url = URL("https://api.telegram.org/bot$token/sendDocument")
+    val connection = (url.openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        doOutput = true
+        doInput = true
+        useCaches = false
+        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+    }
+
+    connection.outputStream.use { output ->
+        PrintWriter(OutputStreamWriter(output, "UTF-8"), true).use { writer ->
+            // Поле chat_id
+            writer.append("--$boundary").append(lineFeed)
+            writer.append("Content-Disposition: form-data; name=\"chat_id\"").append(lineFeed)
+            writer.append("Content-Type: text/plain; charset=UTF-8").append(lineFeed)
+            writer.append(lineFeed).append(chatId).append(lineFeed)
+
+            // Поле message_thread_id (для топиков/форумов)
+            if (!messageThreadId.isNullOrEmpty()) {
+                writer.append("--$boundary").append(lineFeed)
+                writer.append("Content-Disposition: form-data; name=\"message_thread_id\"").append(lineFeed)
+                writer.append("Content-Type: text/plain; charset=UTF-8").append(lineFeed)
+                writer.append(lineFeed).append(messageThreadId).append(lineFeed)
+            }
+
+            // Поле caption
+            writer.append("--$boundary").append(lineFeed)
+            writer.append("Content-Disposition: form-data; name=\"caption\"").append(lineFeed)
+            writer.append("Content-Type: text/plain; charset=UTF-8").append(lineFeed)
+            writer.append(lineFeed).append(caption).append(lineFeed)
+            writer.flush()
+
+            // Файл
+            writer.append("--$boundary").append(lineFeed)
+            writer.append("Content-Disposition: form-data; name=\"document\"; filename=\"${file.name}\"").append(lineFeed)
+            writer.append("Content-Type: application/octet-stream").append(lineFeed)
+            writer.append(lineFeed)
+            writer.flush()
+
+            file.inputStream().use { input ->
+                input.copyTo(output)
+            }
+            output.flush()
+
+            writer.append(lineFeed)
+            writer.append("--$boundary--").append(lineFeed)
+            writer.flush()
+        }
+    }
+
+    val responseCode = connection.responseCode
+    if (responseCode == HttpURLConnection.HTTP_OK) {
+        println("Успешно отправлено в Telegram!")
+    } else {
+        val errorStream = connection.errorStream?.bufferedReader()?.readText() ?: "No error body"
+        println("Ошибка отправки в Telegram (код $responseCode): $errorStream")
+    }
+}
+
 tasks.register<Exec>("buildDex") {
     dependsOn(pluginJar)
 
@@ -88,35 +173,57 @@ tasks.register<Exec>("buildDex") {
         if (dexFile.exists()) {
             val inputBytes = dexFile.readBytes()
 
-            val deflater = Deflater(Deflater.BEST_COMPRESSION)
-            deflater.setInput(inputBytes)
-            deflater.finish()
+            val compressedBytes = ByteArrayOutputStream().use { os ->
+                val process = ProcessBuilder("python", "-c",
+                    "import sys, lzma; sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(), format=lzma.FORMAT_XZ, preset=9 | lzma.PRESET_EXTREME))"
+                ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
 
-            val outputStream = ByteArrayOutputStream()
-            val buffer = ByteArray(1024)
-
-            while (!deflater.finished()) {
-                val count = deflater.deflate(buffer)
-                outputStream.write(buffer, 0, count)
+                process.outputStream.use { it.write(inputBytes) }
+                process.inputStream.copyTo(os)
+                process.waitFor()
+                os.toByteArray()
             }
-            deflater.end()
 
-            val compressedBytes = outputStream.toByteArray()
             val base64Dex = Base64.getEncoder().encodeToString(compressedBytes)
 
-            println(base64Dex)
+            println("Размер исходного DEX: ${inputBytes.size} байт")
+            println("Размер после LZMA: ${compressedBytes.size} байт")
 
-            val targetFile = file(nflPath)
-            if (targetFile.exists()) {
-                val content = targetFile.readText()
+            val nflPluginFile = file(nflPath)
+            if (nflPluginFile.exists()) {
+                val content = nflPluginFile.readText()
                 val updatedContent = content.replace(
                     Regex("""DEX_BASE64\s*=\s*".*?""""),
                     """DEX_BASE64 = "$base64Dex""""
                 )
-                targetFile.writeText(updatedContent)
-                println("Успешно обновлено в ${targetFile.name}")
+                nflPluginFile.writeText(updatedContent)
+                println("Успешно обновлено в ${nflPluginFile.name}")
             } else {
-                println("Файл ${targetFile.absolutePath} не найден!")
+                println("Файл ${nflPluginFile.absolutePath} не найден!")
+            }
+
+            if (!botToken.isNullOrEmpty()) {
+                println("Отправка DEX файла в Telegram (форум/топик)...")
+                val caption = "Сборка завершена!\n" +
+                        "Исходный размер: ${inputBytes.size} байт\n" +
+                        "LZMA сжатие: ${compressedBytes.size} байт"
+
+                val targetChatId = customProps.getProperty("telegram.send.target")
+                val targetTopicId: String? = customProps.getProperty("telegram.send.target.topic")
+
+                try {
+                    sendTelegramDocument(
+                        token = botToken,
+                        chatId = targetChatId,
+                        messageThreadId = targetTopicId,
+                        file = nflPluginFile,
+                        caption = caption
+                    )
+                } catch (e: Exception) {
+                    println("Не удалось отправить сообщение в Telegram: ${e.message}")
+                }
+            } else {
+                println("Токен бота не найден в файле ключей API_KEYS. Пропуск отправки в Telegram.")
             }
         }
     }
