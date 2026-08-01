@@ -7,8 +7,6 @@ import de.robv.android.xposed.XC_MethodHook
 object PluginCore {
     const val DEX_VERSION = "1.0.0b1"
 
-    var pyArgs: Array<out Any?>? = null
-    var pyRunnable: Runnable? = null
     var appContext: Context? = null
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
     private var pluginId: String? = null
@@ -18,38 +16,30 @@ object PluginCore {
 
     @Suppress("unused")
     @JvmStatic
-    fun init(runnable: Runnable, context: Context, pluginId: String) {
-        pyRunnable = runnable
+    fun init(context: Context, pluginId: String) {
         appContext = context
         this.pluginId = pluginId
 
         selectorHook.setupHook(checkPluginId(pluginId))
-        log("NoForwardLimitDex v$DEX_VERSION loaded.")
+        jLog("DEX v$DEX_VERSION loaded.")
     }
 
     @Suppress("unused")
     @JvmStatic
     fun unload() {
         try { unhookObjs.forEach { it.unhook() } }
-        catch (error: Throwable) { log(error) }
+        catch (error: Throwable) { jLog(exception = error) }
 
         clearReflectionCache()
 
-        log("NoForwardLimitDex unloaded.")
-        pyRunnable = null
+        jLog("Unloaded.")
         appContext = null
         this.pluginId = null
     }
 
+    @Suppress("unused")
     @JvmStatic
-    fun callPython(vararg args: Any?) {
-        pyArgs = args
-        pyRunnable?.run()
-        pyArgs = null
-    }
-
-    @JvmStatic
-    fun log(vararg args: Any?) = callPython("log", *args)
+    fun clearSelectorStorage() = selectorHook.clearMessageStorage()
 
     @JvmStatic
     fun jLog(vararg args: String, exception: Throwable? = null) =

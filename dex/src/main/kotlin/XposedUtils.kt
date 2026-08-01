@@ -2,7 +2,6 @@ package org.zwylair.nfldex
 
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import org.zwylair.nfldex.PluginCore.log
 import org.zwylair.nfldex.PluginCore.unhookObjs
 import java.lang.reflect.Field
 import java.lang.reflect.Method
@@ -22,7 +21,7 @@ fun hook(clazz: Class<*>, methodName: String, argsCount: Int, hookInstance: XC_M
 fun hook(className: String, methodName: String, argsCount: Int, hookInstance: XC_MethodHook) {
     val clazz = classesCache.getOrPut(className) { Class.forName(className) }
     if (clazz == null) {
-        log("Class '$className' not found.")
+        PluginCore.jLog("Class '$className' not found.")
         return
     }
     hook(clazz, methodName, argsCount, hookInstance)
@@ -43,12 +42,12 @@ inline fun <reified T : Any> T.findField(fieldName: String): Field? {
 
             field?.apply { isAccessible = true }
                 ?: run {
-                    log("Field '$fieldName' not found in ${this.javaClass.name} hierarchy.")
+                    PluginCore.jLog("Field '$fieldName' not found in ${this.javaClass.name} hierarchy.")
                     null
                 }
         }
     } catch (e: Exception) {
-        log("An error occurred while getting field '$fieldName':", e)
+        PluginCore.jLog("An error occurred while getting field '$fieldName':", exception = e)
         null
     }
 }
@@ -69,7 +68,7 @@ fun findMethod(clazz: Class<*>, methodName: String, argsCount: Int = 0): Method?
     }
 
     return method?: run {
-        log("Method '$methodName' ($argsCount args) not found for class ${clazz.name}.")
+        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${clazz.name}.")
         null
     }
 }
