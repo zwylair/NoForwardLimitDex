@@ -13,6 +13,7 @@ object PluginCore {
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
     private var pluginId: String? = null
 
+    @JvmField
     val selectorHook = SelectorManager()
 
     @Suppress("unused")
