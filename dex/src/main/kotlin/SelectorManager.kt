@@ -4,7 +4,6 @@ import android.util.SparseArray
 import android.view.View
 import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XC_MethodReplacement
 import org.telegram.messenger.BuildVars
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
@@ -14,7 +13,6 @@ class SelectorManager {
     private var messagesArray: Any? = null
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
-    private var multiSelectorHookApplied = false
     private var isProcessingMsgGroup = false
     private var isLastInGroup = false
     private var handleEndOfSelectMsgGroupCall = false
@@ -126,35 +124,9 @@ class SelectorManager {
         hook("org.telegram.ui.ChatActivity", "hideActionMode", 0, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) = clearMessageStorage()
         })
-
-        hook("org.telegram.ui.ChatActivity", "startMultiselect", 1, object : XC_MethodHook() {
-            val doBurn = !verified
-
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (doBurn) burnCpu(10_000)
-                if (multiSelectorHookApplied) return
-
-                hook(
-                    param.thisObject.getFieldValue("chatListView")
-                        ?.getFieldValue("multiSelectionListener")
-                        ?.findMethod("limitReached")!!,
-                    object : XC_MethodReplacement() {
-                        override fun replaceHookedMethod(param: MethodHookParam): Any {
-                            PluginCore.jLog("Multiselect hook worked.")
-                            return false
-                        }
-                    }
-                )
-
-                PluginCore.jLog("Multiselect hook applied.")
-                multiSelectorHookApplied = true
-            }
-        })
     }
 
     private fun updateReplyButtonVisibility(chatActivity: Any, shouldShow: Boolean) {
-        PluginCore.jLog("Updating reply button visibility...")
-
         if (isNewButtonsLayout)
             chatActivity.getFieldValue("actionsButtonsLayout")
                 ?.safeInvoke("showReplyButton", 2, shouldShow, true)
@@ -164,55 +136,50 @@ class SelectorManager {
     }
 
     private fun updateSelectButtonVisibility(chatActivity: Any) {
-        PluginCore.jLog("Updating select button visibility...")
+        try {
+            @Suppress("UNCHECKED_CAST")
+            val messages = chatActivity.getFieldValue("messages") as ArrayList<MessageObject>
 
-        @Suppress("UNCHECKED_CAST")
-        val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<SparseArray<MessageObject>>
-        @Suppress("UNCHECKED_CAST")
-        val messages = chatActivity.getFieldValue("messages") as ArrayList<MessageObject>
+            @Suppress("UNCHECKED_CAST")
+            val javaMsgsMain =
+                (chatActivity.getFieldValue("selectedMessagesIds") as Array<SparseArray<MessageObject>>)[0]
 
-        val javaMsgsMain = javaMsgsSparse[0]
-        var shouldShow = false
-
-        if (javaMsgsMain.size() > 1) {
-            val allSelectedMsgIds = ArrayList<Int>()
-            for (i in 0 until javaMsgsMain.size()) allSelectedMsgIds.add(javaMsgsMain.keyAt(i))
-
-            val secondarySparse = javaMsgsSparse.getOrNull(1)
-            if (secondarySparse != null) {
-                for (i in 0 until secondarySparse.size()) allSelectedMsgIds.add(secondarySparse.keyAt(i))
-            }
-
-            allSelectedMsgIds.sort()
-            if (allSelectedMsgIds.isNotEmpty()) {
-                val begin = allSelectedMsgIds.first()
-                val end = allSelectedMsgIds.last()
+            var shouldShow = false
+            if (javaMsgsMain.size() > 1) {
+                val begin = javaMsgsMain.keyAt(0)
+                val end = javaMsgsMain.keyAt(javaMsgsMain.size() - 1)
 
                 for (message in messages) {
-                    val isInBounds = message.id in (begin + 1) until end
-                    val isSelected = javaMsgsMain.indexOfKey(message.id) >= 0
-                    val contentType = message.getFieldValue("contentType") as Int
+                    val msgId = message.messageOwner.id
 
-                    if (isInBounds && !isSelected && contentType == 0) {
-                        shouldShow = true
-                        break
+                    if (msgId <= 0) continue
+                    if (msgId >= end) continue
+                    if (msgId <= begin) break
+
+                    if (javaMsgsMain.indexOfKey(msgId) < 0) {
+                        val contentType = message.getFieldValue("contentType") as Int
+                        if (contentType == 0) {
+                            shouldShow = true
+                            break
+                        }
                     }
                 }
             }
-        }
 
-        if (isNewButtonsLayout) {
-            chatActivity.getFieldValue("actionsButtonsLayout")
-                ?.safeInvoke("showSelectButton", 2, shouldShow, true)
-        } else {
-            chatActivity.getFieldValue("selectButtonAnimation")
-                ?.safeInvoke("cancel")
+            if (isNewButtonsLayout) {
+                chatActivity.getFieldValue("actionsButtonsLayout")
+                    ?.safeInvoke("showSelectButton", 2, shouldShow, true)
+            } else {
+                chatActivity.getFieldValue("selectButtonAnimation")?.safeInvoke("cancel")
 
-            (chatActivity.getFieldValue("selectButton") as View).apply {
-                visibility = if (shouldShow) View.VISIBLE else View.GONE
-                alpha = if (shouldShow) 0.0f else 1.0f
-                scaleY = if (shouldShow) 0.0f else 1.0f
+                (chatActivity.getFieldValue("selectButton") as View).apply {
+                    visibility = if (shouldShow) View.VISIBLE else View.GONE
+                    alpha = if (shouldShow) 0.0f else 1.0f
+                    scaleY = if (shouldShow) 0.0f else 1.0f
+                }
             }
+        } catch (e: Throwable) {
+            PluginCore.jLog("Error in updateSelectButtonVisibility:", exception = e)
         }
     }
 
