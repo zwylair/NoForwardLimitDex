@@ -56,7 +56,7 @@ class SelectorManager {
 
                         javaMsgsSparse[0] = fakeMessagesArray
                     } catch (e: Exception) {
-                        PluginCore.jLog("SelectorHook.before failed:", exception = e)
+                        PluginCore.log("SelectorHook.before failed:", exception = e)
                     }
                 }
 
@@ -116,7 +116,7 @@ class SelectorManager {
                         updateReplyButtonVisibility(chatActivity, realMessagesArray.size() == 1)
                         updateSelectButtonVisibility(chatActivity)
                     } catch (e: Exception) {
-                        PluginCore.jLog("SelectorHook.after failed:", exception = e)
+                        PluginCore.log("SelectorHook.after failed:", exception = e)
                     }
                 }
             })
@@ -154,7 +154,7 @@ class SelectorManager {
                     multiSelectorHookApplied = true
                 }
         } catch (e: Throwable) {
-            PluginCore.jLog("SelectorHook.setupHook failed:", exception = e)
+            PluginCore.log("SelectorHook.setupHook failed:", exception = e)
         }
     }
 
@@ -211,7 +211,7 @@ class SelectorManager {
                 }
             }
         } catch (e: Throwable) {
-            PluginCore.jLog("Error in updateSelectButtonVisibility:", exception = e)
+            PluginCore.log("Error in updateSelectButtonVisibility:", exception = e)
         }
     }
 

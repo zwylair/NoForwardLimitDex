@@ -21,18 +21,18 @@ object PluginCore {
         this.pluginId = pluginId
 
         selectorHook.setupHook(checkPluginId(pluginId))
-        jLog("DEX v$DEX_VERSION loaded.")
+        log("DEX v$DEX_VERSION loaded.")
     }
 
     @Suppress("unused")
     @JvmStatic
     fun unload() {
         try { unhookObjs.forEach { it.unhook() } }
-        catch (error: Throwable) { jLog(exception = error) }
+        catch (error: Throwable) { log(exception = error) }
 
         clearReflectionCache()
 
-        jLog("Unloaded.")
+        log("Unloaded.")
         appContext = null
         this.pluginId = null
     }
@@ -42,6 +42,6 @@ object PluginCore {
     fun clearSelectorStorage() = selectorHook.clearMessageStorage()
 
     @JvmStatic
-    fun jLog(vararg args: String, exception: Throwable? = null) =
+    fun log(vararg args: String, exception: Throwable? = null) =
         AppUtils.log("[NoForwardLimitDEX] ${args.joinToString()}", exception)
 }

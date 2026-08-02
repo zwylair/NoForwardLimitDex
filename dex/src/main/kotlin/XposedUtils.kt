@@ -22,7 +22,7 @@ inline fun Method.before(crossinline callable: (MethodHookParam) -> Unit) =
             try {
                 callable(param)
             } catch (e: Throwable) {
-                PluginCore.jLog("An error occurred in $name.beforeHookedMethod:", exception = e)
+                PluginCore.log("An error occurred in $name.beforeHookedMethod:", exception = e)
             }
         }
     }))
@@ -46,7 +46,7 @@ fun findClass(className: String): Class<*>? {
             .getOrNull()?.also { classesCache[className] = it }
     ?: run {
         classesNotFound.add(className)
-        PluginCore.jLog("Class '$className' not found.")
+        PluginCore.log("Class '$className' not found.")
         null
     }
 }
@@ -65,7 +65,7 @@ inline fun <reified T : Any> T.findField(fieldName: String): Field? {
 
             field?.apply { isAccessible = true }
                 ?: run {
-                    PluginCore.jLog("Field '$fieldName' not found in ${this.javaClass.name} hierarchy.")
+                    PluginCore.log("Field '$fieldName' not found in ${this.javaClass.name} hierarchy.")
                     null
                 }
 
@@ -73,7 +73,7 @@ inline fun <reified T : Any> T.findField(fieldName: String): Field? {
         }
         optionalField.orElse(null)
     } catch (e: Exception) {
-        PluginCore.jLog("An error occurred while getting field '$fieldName':", exception = e)
+        PluginCore.log("An error occurred while getting field '$fieldName':", exception = e)
         null
     }
 }
@@ -95,7 +95,7 @@ inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0
             }?.apply { isAccessible = true }
         )
     }.orElseGet {
-        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${targetClass.name}.")
+        PluginCore.log("Method '$methodName' ($argsCount args) not found for class ${targetClass.name}.")
         null
     }
 }
