@@ -10,126 +10,138 @@ import org.telegram.tgnet.TLRPC
 import java.lang.reflect.Field
 
 class SelectorManager {
-    private var realMessagesArray: Any? = null
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
-    private var isProcessingMsgGroup = false
-    private var isLastInGroup = false
-    private var handleEndOfSelectMsgGroupCall = false
+    private var realMessagesArray: Any? = null
+    private var fakeMessagesArray: Any? = null
 
     private var selectedMessagesIdsField: Field? = null
     private var chatModeField: Field? = null
     private var currentChatField: Field? = null
 
-    private var fakeMessagesArray: Any? = null
+    private var isProcessingMsgGroup = false
+    private var isLastInGroup = false
+    private var handleEndOfSelectMsgGroupCall = false
 
     fun setupHook(verified: Boolean) {
-        realMessagesArray = Class.forName("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")
-            .getDeclaredConstructor().newInstance()
+        try {
+            realMessagesArray = findClass("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")!!
+                .getDeclaredConstructor().newInstance()
 
-        val chatActivityClazz = findClass("org.telegram.ui.ChatActivity")!!
-        val selectorMethod = chatActivityClazz.findMethod("addToSelectedMessages", 3)!!
+            val chatActivityClazz = findClass("org.telegram.ui.ChatActivity")!!
+            val selectorMethod = chatActivityClazz.findMethod("addToSelectedMessages", 3)!!
 
-        hook(selectorMethod, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                try {
-                    if (!verified) burnCpu(25_000)
+            hook(selectorMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    try {
+                        if (!verified) burnCpu(25_000)
 
-                    val chatActivity = param.thisObject
-                    val selectedMsgObj = param.args[0] as MessageObject
-                    val tappedOutside = param.args[1] as Boolean
-                    val isLast = param.args[2] as Boolean
-                    val isGrouped = selectedMsgObj.groupId != 0L
+                        val chatActivity = param.thisObject
+                        val selectedMsgObj = param.args[0] as MessageObject
+                        val tappedOutside = param.args[1] as Boolean
+                        val isLast = param.args[2] as Boolean
+                        val isGrouped = selectedMsgObj.groupId != 0L
 
-                    @Suppress("UNCHECKED_CAST")
-                    val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
+                        @Suppress("UNCHECKED_CAST")
+                        val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
 
-                    fakeMessagesArray = fakeMessagesArray ?: javaMsgsSparse[0]
+                        fakeMessagesArray = fakeMessagesArray ?: javaMsgsSparse[0]
 
-                    if (selectedMessagesIdsField == null) {
-                        selectedMessagesIdsField = chatActivity.findField("selectedMessagesIds")
-                        chatModeField = chatActivity.findField("chatMode")
-                        currentChatField = chatActivity.findField("currentChat")
-                    }
-
-                    if (isProcessingMsgGroup) {
-                        isLastInGroup = isLast
-                        return
-                    }
-
-                    if (tappedOutside && isLast && isGrouped)
-                        isProcessingMsgGroup = true
-
-                    javaMsgsSparse[0] = fakeMessagesArray
-                } catch (e: Exception) {
-                    PluginCore.jLog("SelectorHook.before failed:", exception = e)
-                }
-            }
-
-            override fun afterHookedMethod(param: MethodHookParam) {
-                try {
-                    if (!verified) burnCpu(30_000)
-
-                    if (handleEndOfSelectMsgGroupCall) {
-                        handleEndOfSelectMsgGroupCall = false
-                        return
-                    }
-
-                    if (isProcessingMsgGroup) {
-                        if (!isLastInGroup) return
-                        isProcessingMsgGroup = false
-                        isLastInGroup = false
-                        handleEndOfSelectMsgGroupCall = true
-                    }
-
-                    val chatActivity = param.thisObject
-                    @Suppress("UNCHECKED_CAST")
-                    val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
-                    @Suppress("UNCHECKED_CAST")
-                    val fakeMessagesArray = fakeMessagesArray as SparseArray<MessageObject>
-                    @Suppress("UNCHECKED_CAST")
-                    val realMessagesArray = realMessagesArray as SparseArray<MessageObject>
-
-                    val chatMode = chatActivity.getFieldValue("chatMode") as Int
-                    val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat
-                    val isInScheduleMode = chatMode == 1
-
-                    for (i in fakeMessagesArray.size() - 1 downTo 0) {
-                        val messageId = fakeMessagesArray.keyAt(i)
-                        val messageObject = fakeMessagesArray.valueAt(i)
-
-                        if (realMessagesArray.indexOfKey(messageId) >= 0) {
-                            realMessagesArray.remove(messageId)
-
-                            if (!messageObject.canForwardMessage())
-                                decrementCantForwardCount(chatActivity)
-
-                            if (!messageObject.canDeleteMessage(isInScheduleMode, currentChat))
-                                decrementCantDeleteCount(chatActivity)
-                        } else {
-                            realMessagesArray.put(messageId, messageObject)
+                        if (selectedMessagesIdsField == null) {
+                            selectedMessagesIdsField = chatActivity.findField("selectedMessagesIds")
+                            chatModeField = chatActivity.findField("chatMode")
+                            currentChatField = chatActivity.findField("currentChat")
                         }
+
+                        if (isProcessingMsgGroup) {
+                            isLastInGroup = isLast
+                            return
+                        }
+
+                        if (tappedOutside && isLast && isGrouped)
+                            isProcessingMsgGroup = true
+
+                        javaMsgsSparse[0] = fakeMessagesArray
+                    } catch (e: Exception) {
+                        PluginCore.jLog("SelectorHook.before failed:", exception = e)
                     }
-
-                    if (realMessagesArray.size() == 0) {
-                        cancelSelectionMode(chatActivity)
-                        return
-                    }
-
-                    fakeMessagesArray.clear()
-                    javaMsgsSparse[0] = realMessagesArray
-
-                    updateReplyButtonVisibility(chatActivity, realMessagesArray.size() == 1)
-                    updateSelectButtonVisibility(chatActivity)
-                } catch (e: Exception) {
-                    PluginCore.jLog("SelectorHook.after failed:", exception = e)
                 }
-            }
-        })
 
-        chatActivityClazz
-            .findMethod("hideActionMode")!!
-            .before { clearMessageStorage() }
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    try {
+                        if (!verified) burnCpu(30_000)
+
+                        if (handleEndOfSelectMsgGroupCall) {
+                            handleEndOfSelectMsgGroupCall = false
+                            return
+                        }
+
+                        if (isProcessingMsgGroup) {
+                            if (!isLastInGroup) return
+                            isProcessingMsgGroup = false
+                            isLastInGroup = false
+                            handleEndOfSelectMsgGroupCall = true
+                        }
+
+                        val chatActivity = param.thisObject
+                        @Suppress("UNCHECKED_CAST")
+                        val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
+                        @Suppress("UNCHECKED_CAST")
+                        val fakeMessagesArray = fakeMessagesArray as SparseArray<MessageObject>
+                        @Suppress("UNCHECKED_CAST")
+                        val realMessagesArray = realMessagesArray as SparseArray<MessageObject>
+
+                        val chatMode = chatActivity.getFieldValue("chatMode") as Int
+                        val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat
+                        val isInScheduleMode = chatMode == 1
+
+                        for (i in fakeMessagesArray.size() - 1 downTo 0) {
+                            val messageId = fakeMessagesArray.keyAt(i)
+                            val messageObject = fakeMessagesArray.valueAt(i)
+
+                            if (realMessagesArray.indexOfKey(messageId) >= 0) {
+                                realMessagesArray.remove(messageId)
+
+                                if (!messageObject.canForwardMessage())
+                                    decrementCantForwardCount(chatActivity)
+
+                                if (!messageObject.canDeleteMessage(isInScheduleMode, currentChat))
+                                    decrementCantDeleteCount(chatActivity)
+                            } else {
+                                realMessagesArray.put(messageId, messageObject)
+                            }
+                        }
+
+                        if (realMessagesArray.size() == 0) {
+                            cancelSelectionMode(chatActivity)
+                            return
+                        }
+
+                        fakeMessagesArray.clear()
+                        javaMsgsSparse[0] = realMessagesArray
+
+                        updateReplyButtonVisibility(chatActivity, realMessagesArray.size() == 1)
+                        updateSelectButtonVisibility(chatActivity)
+                    } catch (e: Exception) {
+                        PluginCore.jLog("SelectorHook.after failed:", exception = e)
+                    }
+                }
+            })
+
+            chatActivityClazz
+                .findMethod("hideActionMode")!!
+                .before { clearMessageStorage() }
+
+            findClass("org.telegram.ui.Components.RecyclerListView")!!
+                .findMethod("startMultiselect", 3)!!
+                .before { multiSelectParam ->
+                    val multiSelectionListener = multiSelectParam.args[2]
+                    multiSelectionListener.findMethod("limitReached")!!
+                        .before { it.result = false }
+                }
+        } catch (e: Throwable) {
+            PluginCore.jLog("SelectorHook.setupHook failed:", exception = e)
+        }
     }
 
     private fun updateReplyButtonVisibility(chatActivity: Any, shouldShow: Boolean) {
