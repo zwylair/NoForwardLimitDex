@@ -7,17 +7,16 @@ import de.robv.android.xposed.XC_MethodHook
 import org.telegram.messenger.BuildVars
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
-import java.lang.reflect.Field
+import kotlin.math.roundToInt
 
 class SelectorManager {
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
     private var realMessagesArray: Any? = null
     private var fakeMessagesArray: Any? = null
-
-    private var selectedMessagesIdsField: Field? = null
-    private var chatModeField: Field? = null
-    private var currentChatField: Field? = null
+    private var scrollStartTime = 0L
+    private var lastScrollTime = 0L
+    private var multiSelectorHookApplied = false
 
     private var isProcessingMsgGroup = false
     private var isLastInGroup = false
@@ -46,12 +45,6 @@ class SelectorManager {
                         val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
 
                         fakeMessagesArray = fakeMessagesArray ?: javaMsgsSparse[0]
-
-                        if (selectedMessagesIdsField == null) {
-                            selectedMessagesIdsField = chatActivity.findField("selectedMessagesIds")
-                            chatModeField = chatActivity.findField("chatMode")
-                            currentChatField = chatActivity.findField("currentChat")
-                        }
 
                         if (isProcessingMsgGroup) {
                             isLastInGroup = isLast
@@ -135,9 +128,30 @@ class SelectorManager {
             findClass("org.telegram.ui.Components.RecyclerListView")!!
                 .findMethod("startMultiselect", 3)!!
                 .before { multiSelectParam ->
+                    if (multiSelectorHookApplied)
+                        return@before
+
                     val multiSelectionListener = multiSelectParam.args[2]
+
                     multiSelectionListener.findMethod("limitReached")!!
                         .before { it.result = false }
+
+                    multiSelectionListener.findMethod("scrollBy", 1)!!
+                        .before {
+                            val now = System.currentTimeMillis()
+
+                            if (now - lastScrollTime > 100)
+                                scrollStartTime = now
+                            lastScrollTime = now
+
+                            val originalDy = it.args[0] as Int
+                            val duration = now - scrollStartTime
+
+                            val factor = 1.0f + (duration / 2_000f).coerceAtMost(2.5f)
+                            it.args[0] = (originalDy * factor).roundToInt()
+                        }
+
+                    multiSelectorHookApplied = true
                 }
         } catch (e: Throwable) {
             PluginCore.jLog("SelectorHook.setupHook failed:", exception = e)
