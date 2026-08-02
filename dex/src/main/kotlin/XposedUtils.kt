@@ -1,37 +1,61 @@
 package org.zwylair.nfldex
 
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
-import org.zwylair.nfldex.PluginCore.unhookObjs
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.Optional
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.jvm.optionals.getOrElse
 
-val methodsCache: HashMap<String, Method?> = hashMapOf()
-val fieldsCache: HashMap<String, Field?> = hashMapOf()
-val classesCache: HashMap<String, Class<*>?> = hashMapOf()
+val methodsCache: ConcurrentHashMap<String, Optional<Method>> = ConcurrentHashMap()
+val fieldsCache: ConcurrentHashMap<String, Optional<Field>> = ConcurrentHashMap()
+val classesCache: ConcurrentHashMap<String, Class<*>> = ConcurrentHashMap()
+val classesNotFound: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
 fun hook(method: Method, hookInstance: XC_MethodHook) =
-    unhookObjs.add(XposedBridge.hookMethod(method, hookInstance))
+    PluginCore.unhookObjs.add(XposedBridge.hookMethod(method, hookInstance))
 
-fun hook(clazz: Class<*>, methodName: String, argsCount: Int, hookInstance: XC_MethodHook) {
-    val method = findMethod(clazz, methodName, argsCount)?: return
-    hook(method, hookInstance)
-}
+inline fun Method.before(crossinline callable: (MethodHookParam) -> Unit) =
+    PluginCore.unhookObjs.add(XposedBridge.hookMethod(this, object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            try {
+                callable(param)
+            } catch (e: Throwable) {
+                PluginCore.jLog("An error occurred in $name.beforeHookedMethod:", exception = e)
+            }
+        }
+    }))
 
-fun hook(className: String, methodName: String, argsCount: Int, hookInstance: XC_MethodHook) {
-    val clazz = classesCache.getOrPut(className) { Class.forName(className) }
-    if (clazz == null) {
+//inline fun Method.after(crossinline callable: (MethodHookParam) -> Unit) =
+//    PluginCore.unhookObjs.add(XposedBridge.hookMethod(this, object : XC_MethodHook() {
+//        override fun afterHookedMethod(param: MethodHookParam) {
+//            try {
+//                callable(param)
+//            } catch (e: Throwable) {
+//                PluginCore.jLog("An error occurred in $name.afterHookedMethod:", exception = e)
+//            }
+//        }
+//    }))
+
+fun findClass(className: String): Class<*>? {
+    if (className in classesNotFound) return null
+
+    return classesCache[className]
+        ?: runCatching { Class.forName(className) }
+            .getOrNull()?.also { classesCache[className] = it }
+    ?: run {
+        classesNotFound.add(className)
         PluginCore.jLog("Class '$className' not found.")
-        return
+        null
     }
-    hook(clazz, methodName, argsCount, hookInstance)
 }
 
 inline fun <reified T : Any> T.findField(fieldName: String): Field? {
     return try {
         val cacheKey = "${this.javaClass.name}#$fieldName"
-
-        fieldsCache.getOrPut(cacheKey) {
+        val optionalField = fieldsCache.getOrPut(cacheKey) {
             var currentClass: Class<*>? = this.javaClass
             var field: Field? = null
 
@@ -45,7 +69,10 @@ inline fun <reified T : Any> T.findField(fieldName: String): Field? {
                     PluginCore.jLog("Field '$fieldName' not found in ${this.javaClass.name} hierarchy.")
                     null
                 }
+
+            Optional.ofNullable(field)
         }
+        optionalField.orElse(null)
     } catch (e: Exception) {
         PluginCore.jLog("An error occurred while getting field '$fieldName':", exception = e)
         null
@@ -58,23 +85,19 @@ inline fun <reified T : Any> T.getFieldValue(fieldName: String): Any? =
 inline fun <reified T : Any> T.setFieldValue(fieldName: String, value: Any?) =
     this.findField(fieldName)?.set(this, value)
 
-fun findMethod(clazz: Class<*>, methodName: String, argsCount: Int = 0): Method? {
-    val cacheKey = "${clazz.name}#$methodName($argsCount)"
-
-    val method = methodsCache.getOrPut(cacheKey) {
-        clazz.declaredMethods.firstOrNull {
-            it.name == methodName && it.parameterCount == argsCount
-        }?.apply { isAccessible = true }
-    }
-
-    return method?: run {
-        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${clazz.name}.")
+inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0): Method? {
+    val cacheKey = "${this.javaClass.name}#$methodName($argsCount)"
+    return methodsCache.getOrPut(cacheKey) {
+        Optional.ofNullable(
+            this.javaClass.declaredMethods.firstOrNull {
+                it.name == methodName && it.parameterCount == argsCount
+            }?.apply { isAccessible = true }
+        )
+    }.getOrElse {
+        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${this.javaClass.name}.")
         null
     }
 }
-
-inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0): Method? =
-    findMethod(this.javaClass, methodName, argsCount)
 
 inline fun <reified T : Any> T.safeInvoke(methodName: String, argsCount: Int = 0, vararg args: Any?) =
     this.findMethod(methodName, argsCount)?.invoke(this, *args)

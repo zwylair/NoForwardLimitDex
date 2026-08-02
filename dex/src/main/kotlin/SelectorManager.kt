@@ -10,7 +10,7 @@ import org.telegram.tgnet.TLRPC
 import java.lang.reflect.Field
 
 class SelectorManager {
-    private var messagesArray: Any? = null
+    private var realMessagesArray: Any? = null
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
     private var isProcessingMsgGroup = false
@@ -21,48 +21,54 @@ class SelectorManager {
     private var chatModeField: Field? = null
     private var currentChatField: Field? = null
 
-    private var originalSparseArray: Any? = null
+    private var fakeMessagesArray: Any? = null
 
     fun setupHook(verified: Boolean) {
-        messagesArray = Class.forName("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")
+        realMessagesArray = Class.forName("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")
             .getDeclaredConstructor().newInstance()
 
-        hook("org.telegram.ui.ChatActivity", "addToSelectedMessages", 3, object : XC_MethodHook() {
-            val doBurn = !verified
+        val chatActivityClazz = findClass("org.telegram.ui.ChatActivity")!!
+        val selectorMethod = chatActivityClazz.findMethod("addToSelectedMessages", 3)!!
 
+        hook(selectorMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                if (doBurn) burnCpu(25_000)
+                try {
+                    if (!verified) burnCpu(25_000)
 
-                val chatActivity = param.thisObject
-                val selectedMsgObj = param.args[0] as MessageObject
-                val tappedOutside = param.args[1] as Boolean
-                val isLast = param.args[2] as Boolean
-                val isGrouped = selectedMsgObj.groupId != 0L
-                @Suppress("UNCHECKED_CAST")
-                val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
+                    val chatActivity = param.thisObject
+                    val selectedMsgObj = param.args[0] as MessageObject
+                    val tappedOutside = param.args[1] as Boolean
+                    val isLast = param.args[2] as Boolean
+                    val isGrouped = selectedMsgObj.groupId != 0L
 
-                originalSparseArray = originalSparseArray?: javaMsgsSparse[0]
+                    @Suppress("UNCHECKED_CAST")
+                    val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
 
-                if (selectedMessagesIdsField == null) {
-                    selectedMessagesIdsField = chatActivity.findField("selectedMessagesIds")
-                    chatModeField = chatActivity.findField("chatMode")
-                    currentChatField = chatActivity.findField("currentChat")
+                    fakeMessagesArray = fakeMessagesArray ?: javaMsgsSparse[0]
+
+                    if (selectedMessagesIdsField == null) {
+                        selectedMessagesIdsField = chatActivity.findField("selectedMessagesIds")
+                        chatModeField = chatActivity.findField("chatMode")
+                        currentChatField = chatActivity.findField("currentChat")
+                    }
+
+                    if (isProcessingMsgGroup) {
+                        isLastInGroup = isLast
+                        return
+                    }
+
+                    if (tappedOutside && isLast && isGrouped)
+                        isProcessingMsgGroup = true
+
+                    javaMsgsSparse[0] = fakeMessagesArray
+                } catch (e: Exception) {
+                    PluginCore.jLog("SelectorHook.before failed:", exception = e)
                 }
-
-                if (isProcessingMsgGroup) {
-                    isLastInGroup = isLast
-                    return
-                }
-
-                if (tappedOutside && isLast && isGrouped)
-                    isProcessingMsgGroup = true
-
-                javaMsgsSparse[0] = originalSparseArray
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
                 try {
-                    if (doBurn) burnCpu(30_000)
+                    if (!verified) burnCpu(30_000)
 
                     if (handleEndOfSelectMsgGroupCall) {
                         handleEndOfSelectMsgGroupCall = false
@@ -80,9 +86,9 @@ class SelectorManager {
                     @Suppress("UNCHECKED_CAST")
                     val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
                     @Suppress("UNCHECKED_CAST")
-                    val fakeMessagesArray = javaMsgsSparse[0] as SparseArray<MessageObject>
+                    val fakeMessagesArray = fakeMessagesArray as SparseArray<MessageObject>
                     @Suppress("UNCHECKED_CAST")
-                    val realMessagesArray = messagesArray as SparseArray<MessageObject>
+                    val realMessagesArray = realMessagesArray as SparseArray<MessageObject>
 
                     val chatMode = chatActivity.getFieldValue("chatMode") as Int
                     val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat
@@ -116,14 +122,14 @@ class SelectorManager {
                     updateReplyButtonVisibility(chatActivity, realMessagesArray.size() == 1)
                     updateSelectButtonVisibility(chatActivity)
                 } catch (e: Exception) {
-                    PluginCore.jLog("SelectorHook (after) failed:", exception=e)
+                    PluginCore.jLog("SelectorHook.after failed:", exception = e)
                 }
             }
         })
 
-        hook("org.telegram.ui.ChatActivity", "hideActionMode", 0, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) = clearMessageStorage()
-        })
+        chatActivityClazz
+            .findMethod("hideActionMode")!!
+            .before { clearMessageStorage() }
     }
 
     private fun updateReplyButtonVisibility(chatActivity: Any, shouldShow: Boolean) {
@@ -184,12 +190,8 @@ class SelectorManager {
     }
 
     private fun cancelSelectionMode(chatActivity: Any) {
-        try {
-            chatActivity.safeInvoke("hideActionMode")
-            chatActivity.safeInvoke("updatePinnedMessageView", 1, true)
-        } catch (e: Exception) {
-            PluginCore.jLog("Error in cancelSelectionMode:", exception=e)
-        }
+        chatActivity.safeInvoke("hideActionMode")
+        chatActivity.safeInvoke("updatePinnedMessageView", 1, true)
     }
 
     private fun decrementCantForwardCount(chatActivity: Any) {
@@ -217,9 +219,9 @@ class SelectorManager {
 
     fun clearMessageStorage() {
         @Suppress("UNCHECKED_CAST")
-        if (messagesArray != null)
-            (messagesArray as SparseArray<*>).clear()
-        if (originalSparseArray != null)
-            (originalSparseArray as SparseArray<*>).clear()
+        if (realMessagesArray != null)
+            (realMessagesArray as SparseArray<*>).clear()
+        if (fakeMessagesArray != null)
+            (fakeMessagesArray as SparseArray<*>).clear()
     }
 }
