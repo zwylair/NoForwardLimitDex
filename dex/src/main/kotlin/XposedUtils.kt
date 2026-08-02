@@ -7,7 +7,6 @@ import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.jvm.optionals.getOrElse
 
 val methodsCache: ConcurrentHashMap<String, Optional<Method>> = ConcurrentHashMap()
 val fieldsCache: ConcurrentHashMap<String, Optional<Field>> = ConcurrentHashMap()
@@ -86,15 +85,17 @@ inline fun <reified T : Any> T.setFieldValue(fieldName: String, value: Any?) =
     this.findField(fieldName)?.set(this, value)
 
 inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0): Method? {
-    val cacheKey = "${this.javaClass.name}#$methodName($argsCount)"
+    val targetClass: Class<*> = if (this is Class<*>) this else this.javaClass
+    val cacheKey = "${targetClass.name}#$methodName($argsCount)"
+
     return methodsCache.getOrPut(cacheKey) {
         Optional.ofNullable(
-            this.javaClass.declaredMethods.firstOrNull {
+            targetClass.declaredMethods.firstOrNull {
                 it.name == methodName && it.parameterCount == argsCount
             }?.apply { isAccessible = true }
         )
-    }.getOrElse {
-        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${this.javaClass.name}.")
+    }.orElseGet {
+        PluginCore.jLog("Method '$methodName' ($argsCount args) not found for class ${targetClass.name}.")
         null
     }
 }
