@@ -84,8 +84,8 @@ class SelectorManager {
                         @Suppress("UNCHECKED_CAST")
                         val realMessagesArray = realMessagesArray as SparseArray<MessageObject>
 
-                        val chatMode = chatActivity.getFieldValue("chatMode") as Int
-                        val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat
+                        val chatMode = chatActivity.getFieldValue("chatMode") as Int?
+                        val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat?
                         val isInScheduleMode = chatMode == 1
 
                         for (i in fakeMessagesArray.size() - 1 downTo 0) {
