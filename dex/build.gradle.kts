@@ -24,29 +24,14 @@ if (customPropertiesFile.exists()) {
 }
 
 val telegramDir = file(providers.gradleProperty("telegram.dir").get())
-val androidSdkDir = file(providers.gradleProperty("android.sdk.dir").get())
-val compileSdkVersion = providers.gradleProperty("android.compile.sdk").get()
+val botToken: String? = customProps.getProperty("telegram.bot.token")
 val nflPath = providers.gradleProperty("nfl.plugin.path").get()
 
-val botToken: String? = customProps.getProperty("telegram.bot.token")
+val androidSdkDir = file(providers.gradleProperty("android.sdk.dir").get())
+val compileSdkVersion = providers.gradleProperty("android.compile.sdk").get()
 
-val exteraHookAar = file("$telegramDir/Tools/maven/dev/exterahook/exterahook/0.2.3/exterahook-0.2.3.aar")
-val exteraHookJar = file("$projectDir/libs/exterahook-0.2.3.jar")
-val exteraStubs = file("$projectDir/libs/exteragram-stubs.jar")
-
-if (exteraHookAar.exists() && !exteraHookJar.exists()) {
-    exteraHookJar.parentFile.mkdirs()
-    ZipFile(exteraHookAar).use { zip ->
-        val entry = zip.getEntry("classes.jar")
-        if (entry != null) {
-            zip.getInputStream(entry).use { input ->
-                exteraHookJar.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-        }
-    }
-}
+val exteraHookVersion = providers.gradleProperty("exterahook.version").get()
+val exteraHookAar = file("$telegramDir/Tools/maven/dev/exterahook/exterahook/$exteraHookVersion/exterahook-$exteraHookVersion.aar")
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
@@ -59,11 +44,67 @@ kotlin {
     }
 }
 
+val aarCompileOnly by configurations.creating { isTransitive = true }
+
+val extractAarsDir = layout.buildDirectory.dir("extracted-aars")
+
+val extractAarsTask = tasks.register("extractAars") {
+    inputs.files(aarCompileOnly)
+    outputs.dir(extractAarsDir)
+
+    doLast {
+        val outDir = extractAarsDir.get().asFile
+        outDir.deleteRecursively()
+        outDir.mkdirs()
+
+        aarCompileOnly.files.forEach { file ->
+            val baseName = file.nameWithoutExtension
+
+            if (file.extension == "aar") {
+                ZipFile(file).use { zip ->
+                    zip.entries().asSequence().forEach { entry ->
+                        if (entry.name == "classes.jar") {
+                            val outFile = File(outDir, "$baseName-classes.jar")
+                            zip.getInputStream(entry).use { input ->
+                                outFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                        else if (entry.name.startsWith("libs/") && entry.name.endsWith(".jar")) {
+                            val cleanName = entry.name.substringAfterLast("/")
+                            val outFile = File(outDir, "$baseName-$cleanName")
+                            zip.getInputStream(entry).use { input ->
+                                outFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (file.extension == "jar") {
+                file.copyTo(File(outDir, file.name), overwrite = true)
+            }
+        }
+    }
+}
+
 dependencies {
-    compileOnly(files("$androidSdkDir/platforms/android-$compileSdkVersion/android.jar"))
-    compileOnly(files(exteraHookJar))
-    compileOnly(files(exteraStubs))
     compileOnly(kotlin("stdlib"))
+
+    compileOnly(files("$androidSdkDir/platforms/android-$compileSdkVersion/android.jar"))
+    aarCompileOnly("androidx.core:core-ktx:1.18.0")
+
+    compileOnly(files(file("$projectDir/libs/exteragram-clean-stubs.jar")))
+    if (exteraHookAar.exists()) {
+        aarCompileOnly(files(exteraHookAar))
+    } else {
+        println("Warning: exterahook AAR not found at ${exteraHookAar.absolutePath}")
+    }
+
+    compileOnly(fileTree(extractAarsDir) {
+        include("*.jar")
+    }.builtBy(extractAarsTask))
 }
 
 tasks.withType<KotlinCompile>().configureEach {
@@ -220,7 +261,8 @@ tasks.register<Exec>("buildDex") {
                         caption = caption
                     )
                 } catch (e: Exception) {
-                    println("Не удалось отправить сообщение в Telegram: ${e.message}")
+                    println("Не удалось отправить сообщение в Telegram:")
+                    e.printStackTrace()
                 }
             } else {
                 println("Токен бота не найден в файле ключей API_KEYS. Пропуск отправки в Telegram.")
