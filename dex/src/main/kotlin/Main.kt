@@ -5,7 +5,7 @@ import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
 
 object PluginCore {
-    const val DEX_VERSION = "1.0.0"
+    const val DEX_VERSION = "1.0.1"
 
     var appContext: Context? = null
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
