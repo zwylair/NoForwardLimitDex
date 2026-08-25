@@ -225,8 +225,8 @@ class SelectorManager {
         chatActivity.setFieldValue("cantForwardMessagesCount", count)
 
         if (count == 0) {
-            val forwardButton = chatActivity.getFieldValue("forwardButton") as View
-            forwardButton.apply {
+            val forwardButton = chatActivity.getFieldValue("forwardButton") as View?
+            forwardButton?.apply {
                 isEnabled = true
                 alpha = 1.0f
             }
@@ -238,8 +238,8 @@ class SelectorManager {
         chatActivity.setFieldValue("cantDeleteMessagesCount", count)
 
         if (count == 0) {
-            val deleteItem = chatActivity.getFieldValue("deleteItem") as View
-            deleteItem.visibility = View.VISIBLE
+            val deleteItem = chatActivity.getFieldValue("deleteItem") as View?
+            deleteItem?.visibility = View.VISIBLE
         }
     }
 
