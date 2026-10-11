@@ -1,0 +1,6 @@
+# Secrets + recipient ids — git-ignored. Copy to `API_KEYS` (no extension)
+# in the project root and fill in. Leave telegram.bot.token blank to skip the
+# Telegram upload entirely.
+telegram.bot.token=
+telegram.send.target=
+telegram.send.target.topic=

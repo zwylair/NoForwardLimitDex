@@ -3,8 +3,20 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../exteraGram-Dev" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/td" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/absl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/boringssl" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/dav1d" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/ffmpeg" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/libvpx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/libyuv" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/openh264" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/wamr" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/xiph/ogg" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/xiph/opus" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/third_party/xiph/opusfile" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/jni/tlottie" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj/lib/jlatexmath" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../exteraGram-Dev/TMessagesProj_Modules/media" vcs="Git" />
   </component>
 </project>

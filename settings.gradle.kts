@@ -12,9 +12,10 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
 
+        // exterahook is published only to the maven mirror inside the host checkout
         maven {
-            val telegramPath = providers.gradleProperty("telegram.dir").get()
-            url = uri("$telegramPath/Tools/maven")
+            url = uri("${providers.gradleProperty("host.dir").get()}/Tools/maven")
+            content { includeGroupByRegex("""dev\.exterahook(\..+)?""") }
         }
     }
 }
