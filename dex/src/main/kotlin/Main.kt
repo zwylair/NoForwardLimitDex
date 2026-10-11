@@ -14,6 +14,9 @@ object PluginCore {
     @JvmField
     val selectorHook = SelectorManager()
 
+    @JvmField
+    val smartForward = SmartForwardManager()
+
     @Suppress("unused")
     @JvmStatic
     fun init(context: Context, pluginId: String) {
@@ -21,6 +24,7 @@ object PluginCore {
         this.pluginId = pluginId
 
         selectorHook.setupHook(checkPluginId(pluginId))
+        smartForward.setupHook()
         log("DEX v$DEX_VERSION loaded.")
     }
 

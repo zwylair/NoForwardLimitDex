@@ -100,6 +100,12 @@ inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0
     }
 }
 
+fun Class<*>.findMethods(methodName: String): List<Method> =
+    declaredMethods
+        .filter { it.name == methodName }
+        .onEach { it.isAccessible = true }
+        .also { if (it.isEmpty()) PluginCore.log("No methods named '$methodName' in class $name.") }
+
 inline fun <reified T : Any> T.safeInvoke(methodName: String, argsCount: Int = 0, vararg args: Any?) =
     this.findMethod(methodName, argsCount)?.invoke(this, *args)
 

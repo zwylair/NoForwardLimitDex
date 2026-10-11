@@ -5,6 +5,7 @@ import android.view.View
 import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
 import org.telegram.messenger.BuildVars
+import org.telegram.messenger.ChatObject
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
 import kotlin.math.roundToInt
@@ -21,6 +22,7 @@ class SelectorManager {
     private var isProcessingMsgGroup = false
     private var isLastInGroup = false
     private var handleEndOfSelectMsgGroupCall = false
+    private val seededGroupIds = ArrayList<Int>()
 
     fun setupHook(verified: Boolean) {
         try {
@@ -51,10 +53,12 @@ class SelectorManager {
                             return
                         }
 
-                        if (tappedOutside && isLast && isGrouped)
-                            isProcessingMsgGroup = true
-
                         javaMsgsSparse[0] = fakeMessagesArray
+
+                        if (tappedOutside && isLast && isGrouped) {
+                            isProcessingMsgGroup = true
+                            seedPartiallySelectedGroup(chatActivity, selectedMsgObj.groupId)
+                        }
                     } catch (e: Exception) {
                         PluginCore.log("SelectorHook.before failed:", exception = e)
                     }
@@ -88,6 +92,9 @@ class SelectorManager {
                         val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat?
                         val isInScheduleMode = chatMode == 1
 
+                        seededGroupIds.forEach(fakeMessagesArray::remove)
+                        seededGroupIds.clear()
+
                         for (i in fakeMessagesArray.size() - 1 downTo 0) {
                             val messageId = fakeMessagesArray.keyAt(i)
                             val messageObject = fakeMessagesArray.valueAt(i)
@@ -113,7 +120,10 @@ class SelectorManager {
                         fakeMessagesArray.clear()
                         javaMsgsSparse[0] = realMessagesArray
 
-                        updateReplyButtonVisibility(chatActivity, realMessagesArray.size() == 1)
+                        updateReplyButtonVisibility(
+                            chatActivity,
+                            realMessagesArray.size() == 1 && canReplyIn(currentChat),
+                        )
                         updateSelectButtonVisibility(chatActivity)
                     } catch (e: Exception) {
                         PluginCore.log("SelectorHook.after failed:", exception = e)
@@ -157,6 +167,35 @@ class SelectorManager {
             PluginCore.log("SelectorHook.setupHook failed:", exception = e)
         }
     }
+
+    // The selected messages live in realMessagesArray while the client only sees the fake
+    // array, so it takes a half-selected album for an unselected one and toggles each of
+    // its messages. Showing it the already selected ones makes it add just the rest.
+    private fun seedPartiallySelectedGroup(chatActivity: Any, groupId: Long) {
+        @Suppress("UNCHECKED_CAST")
+        val groupMessages = chatActivity.getFieldValue("groupedMessagesMap")
+            ?.safeInvoke("get", 1, groupId)
+            ?.getFieldValue("messages") as? ArrayList<MessageObject>
+            ?: return
+
+        @Suppress("UNCHECKED_CAST")
+        val real = realMessagesArray as SparseArray<MessageObject>
+        @Suppress("UNCHECKED_CAST")
+        val fake = fakeMessagesArray as SparseArray<MessageObject>
+
+        val selected = groupMessages.filter { real.indexOfKey(it.id) >= 0 }
+        if (selected.isEmpty() || selected.size == groupMessages.size) return
+
+        selected.forEach {
+            fake.put(it.id, it)
+            seededGroupIds.add(it.id)
+        }
+    }
+
+    // A reply from a chat the user cannot write to is sent to another chat,
+    // which the server rejects for chats with restricted forwards.
+    private fun canReplyIn(chat: TLRPC.Chat?) =
+        chat == null || !chat.noforwards || ChatObject.canWriteToChat(chat)
 
     private fun updateReplyButtonVisibility(chatActivity: Any, shouldShow: Boolean) {
         if (isNewButtonsLayout)
@@ -249,5 +288,6 @@ class SelectorManager {
             (realMessagesArray as SparseArray<*>).clear()
         if (fakeMessagesArray != null)
             (fakeMessagesArray as SparseArray<*>).clear()
+        seededGroupIds.clear()
     }
 }
