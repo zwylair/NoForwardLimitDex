@@ -41,10 +41,6 @@ object PluginCore {
         this.pluginId = null
     }
 
-    @Suppress("unused")
-    @JvmStatic
-    fun clearSelectorStorage() = selectorHook.clearMessageStorage()
-
     @JvmStatic
     fun log(vararg args: String, exception: Throwable? = null) =
         AppUtils.log("[NoForwardLimitDEX] ${args.joinToString()}", exception)

@@ -1,65 +1,50 @@
 package org.zwylair.nfldex
 
-import android.util.SparseArray
+import android.os.SystemClock
 import android.view.View
 import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.BuildVars
 import org.telegram.messenger.ChatObject
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
+import org.telegram.ui.ChatActivity
+import java.lang.reflect.Field
+import java.lang.reflect.Member
 import kotlin.math.roundToInt
+
+private typealias SelectedMessages = ChatActivity.SparseArrayWithTouch<MessageObject>
 
 class SelectorManager {
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
-    private var realMessagesArray: Any? = null
-    private var fakeMessagesArray: Any? = null
     private var scrollStartTime = 0L
     private var lastScrollTime = 0L
     private var multiSelectorHookApplied = false
 
-    private var isProcessingMsgGroup = false
-    private var isLastInGroup = false
-    private var handleEndOfSelectMsgGroupCall = false
-    private val seededGroupIds = ArrayList<Int>()
+    private lateinit var selectedMessagesIdsField: Field
+    private var limitCheckPending = false
+    private var actionModeUpdateTarget: ChatActivity? = null
+    private var lastActionModeUpdate = 0L
 
     fun setupHook(verified: Boolean) {
         try {
-            realMessagesArray = findClass("org.telegram.ui.ChatActivity\$SparseArrayWithTouch")!!
-                .getDeclaredConstructor().newInstance()
+            selectedMessagesIdsField = ChatActivity::class.java
+                .getDeclaredField("selectedMessagesIds")
+                .apply { isAccessible = true }
 
-            val chatActivityClazz = findClass("org.telegram.ui.ChatActivity")!!
-            val selectorMethod = chatActivityClazz.findMethod("addToSelectedMessages", 3)!!
+            val selectorMethod = findClass("org.telegram.ui.ChatActivity")!!
+                .findMethod("addToSelectedMessages", 3)!!
 
             hook(selectorMethod, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     try {
                         if (!verified) burnCpu(25_000)
 
-                        val chatActivity = param.thisObject
-                        val selectedMsgObj = param.args[0] as MessageObject
-                        val tappedOutside = param.args[1] as Boolean
-                        val isLast = param.args[2] as Boolean
-                        val isGrouped = selectedMsgObj.groupId != 0L
-
-                        @Suppress("UNCHECKED_CAST")
-                        val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
-
-                        fakeMessagesArray = fakeMessagesArray ?: javaMsgsSparse[0]
-
-                        if (isProcessingMsgGroup) {
-                            isLastInGroup = isLast
-                            return
-                        }
-
-                        javaMsgsSparse[0] = fakeMessagesArray
-
-                        if (tappedOutside && isLast && isGrouped) {
-                            isProcessingMsgGroup = true
-                            seedPartiallySelectedGroup(chatActivity, selectedMsgObj.groupId)
-                        }
-                    } catch (e: Exception) {
+                        bypassSelectionLimit(param)
+                    } catch (e: Throwable) {
                         PluginCore.log("SelectorHook.before failed:", exception = e)
                     }
                 }
@@ -68,72 +53,13 @@ class SelectorManager {
                     try {
                         if (!verified) burnCpu(30_000)
 
-                        if (handleEndOfSelectMsgGroupCall) {
-                            handleEndOfSelectMsgGroupCall = false
-                            return
-                        }
-
-                        if (isProcessingMsgGroup) {
-                            if (!isLastInGroup) return
-                            isProcessingMsgGroup = false
-                            isLastInGroup = false
-                            handleEndOfSelectMsgGroupCall = true
-                        }
-
-                        val chatActivity = param.thisObject
-                        @Suppress("UNCHECKED_CAST")
-                        val javaMsgsSparse = chatActivity.getFieldValue("selectedMessagesIds") as Array<Any?>
-                        @Suppress("UNCHECKED_CAST")
-                        val fakeMessagesArray = fakeMessagesArray as SparseArray<MessageObject>
-                        @Suppress("UNCHECKED_CAST")
-                        val realMessagesArray = realMessagesArray as SparseArray<MessageObject>
-
-                        val chatMode = chatActivity.getFieldValue("chatMode") as Int?
-                        val currentChat = chatActivity.getFieldValue("currentChat") as TLRPC.Chat?
-                        val isInScheduleMode = chatMode == 1
-
-                        seededGroupIds.forEach(fakeMessagesArray::remove)
-                        seededGroupIds.clear()
-
-                        for (i in fakeMessagesArray.size() - 1 downTo 0) {
-                            val messageId = fakeMessagesArray.keyAt(i)
-                            val messageObject = fakeMessagesArray.valueAt(i)
-
-                            if (realMessagesArray.indexOfKey(messageId) >= 0) {
-                                realMessagesArray.remove(messageId)
-
-                                if (!messageObject.canForwardMessage())
-                                    decrementCantForwardCount(chatActivity)
-
-                                if (!messageObject.canDeleteMessage(isInScheduleMode, currentChat))
-                                    decrementCantDeleteCount(chatActivity)
-                            } else {
-                                realMessagesArray.put(messageId, messageObject)
-                            }
-                        }
-
-                        if (realMessagesArray.size() == 0) {
-                            cancelSelectionMode(chatActivity)
-                            return
-                        }
-
-                        fakeMessagesArray.clear()
-                        javaMsgsSparse[0] = realMessagesArray
-
-                        updateReplyButtonVisibility(
-                            chatActivity,
-                            realMessagesArray.size() == 1 && canReplyIn(currentChat),
-                        )
-                        updateSelectButtonVisibility(chatActivity)
-                    } catch (e: Exception) {
+                        limitCheckPending = false
+                        updateReplyButtonVisibility(param.thisObject as ChatActivity)
+                    } catch (e: Throwable) {
                         PluginCore.log("SelectorHook.after failed:", exception = e)
                     }
                 }
             })
-
-            chatActivityClazz
-                .findMethod("hideActionMode")!!
-                .before { clearMessageStorage() }
 
             findClass("org.telegram.ui.Components.RecyclerListView")!!
                 .findMethod("startMultiselect", 3)!!
@@ -141,7 +67,10 @@ class SelectorManager {
                     if (multiSelectorHookApplied)
                         return@before
 
+                    // the dialogs and topics lists start their own multiselect through the same method
                     val multiSelectionListener = multiSelectParam.args[2]
+                    if (!multiSelectionListener.javaClass.name.startsWith(CHAT_ACTIVITY_INNER_PREFIX))
+                        return@before
 
                     multiSelectionListener.findMethod("limitReached")!!
                         .before { it.result = false }
@@ -168,28 +97,90 @@ class SelectorManager {
         }
     }
 
-    // The selected messages live in realMessagesArray while the client only sees the fake
-    // array, so it takes a half-selected album for an unselected one and toggles each of
-    // its messages. Showing it the already selected ones makes it add just the rest.
-    private fun seedPartiallySelectedGroup(chatActivity: Any, groupId: Long) {
-        @Suppress("UNCHECKED_CAST")
-        val groupMessages = chatActivity.getFieldValue("groupedMessagesMap")
-            ?.safeInvoke("get", 1, groupId)
-            ?.getFieldValue("messages") as? ArrayList<MessageObject>
-            ?: return
+    // addToSelectedMessages refuses to select a message when
+    // selectedMessagesIds[0].size() + selectedMessagesIds[1].size() >= SELECTION_LIMIT.
+    // These arrays report an empty selection from the moment the method is entered until it
+    // puts or removes a message, which is exactly when it makes that check. Everything else,
+    // the rest of the method included, sees the real selection.
+    private inner class UncappedMessages(source: SelectedMessages) : SelectedMessages() {
+        val realSize get() = super.size()
 
-        @Suppress("UNCHECKED_CAST")
-        val real = realMessagesArray as SparseArray<MessageObject>
-        @Suppress("UNCHECKED_CAST")
-        val fake = fakeMessagesArray as SparseArray<MessageObject>
-
-        val selected = groupMessages.filter { real.indexOfKey(it.id) >= 0 }
-        if (selected.isEmpty() || selected.size == groupMessages.size) return
-
-        selected.forEach {
-            fake.put(it.id, it)
-            seededGroupIds.add(it.id)
+        init {
+            for (i in 0 until source.size())
+                append(source.keyAt(i), source.valueAt(i))
+            withTouch.addAll(source.withTouch)
         }
+
+        override fun size() = if (limitCheckPending) 0 else super.size()
+
+        override fun put(key: Int, value: MessageObject?) {
+            limitCheckPending = false
+            super.put(key, value)
+        }
+
+        override fun delete(key: Int) {
+            limitCheckPending = false
+            super.delete(key)
+        }
+
+        override fun remove(key: Int) {
+            limitCheckPending = false
+            super.remove(key)
+        }
+    }
+
+    private fun bypassSelectionLimit(param: XC_MethodHook.MethodHookParam) {
+        if (param.args[0] == null) return
+
+        val chatActivity = param.thisObject as ChatActivity
+        if (uncapSelection(chatActivity) < SELECTION_LIMIT) return
+
+        limitCheckPending = true
+
+        // The action mode update at the end of addToSelectedMessages walks the whole selection,
+        // so for a big one it is run at most once per ACTION_MODE_UPDATE_INTERVAL
+        // instead of once per message.
+        if (param.args[2] == true) {
+            param.args[2] = false
+            scheduleActionModeUpdate(chatActivity, param.method)
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun selectedMessagesOf(chatActivity: ChatActivity) =
+        selectedMessagesIdsField.get(chatActivity) as Array<SelectedMessages>
+
+    private fun uncapSelection(chatActivity: ChatActivity): Int {
+        val selected = selectedMessagesOf(chatActivity)
+        var selectedCount = 0
+
+        for (i in selected.indices) {
+            val messages = selected[i] as? UncappedMessages
+                ?: UncappedMessages(selected[i]).also { selected[i] = it }
+            selectedCount += messages.realSize
+        }
+
+        return selectedCount
+    }
+
+    private fun scheduleActionModeUpdate(chatActivity: ChatActivity, selectorMethod: Member) {
+        if (actionModeUpdateTarget === chatActivity) return
+        actionModeUpdateTarget = chatActivity
+
+        val delay = lastActionModeUpdate + ACTION_MODE_UPDATE_INTERVAL - SystemClock.uptimeMillis()
+
+        AndroidUtilities.runOnUIThread({
+            actionModeUpdateTarget = null
+            lastActionModeUpdate = SystemClock.uptimeMillis()
+
+            try {
+                // addToSelectedMessages(null, false, true) only updates the action mode
+                if (chatActivity.actionBar?.isActionModeShowed == true)
+                    XposedBridge.invokeOriginalMethod(selectorMethod, chatActivity, arrayOf<Any?>(null, false, true))
+            } catch (e: Throwable) {
+                PluginCore.log("SelectorHook: action mode update failed:", exception = e)
+            }
+        }, delay.coerceAtLeast(0))
     }
 
     // A reply from a chat the user cannot write to is sent to another chat,
@@ -197,7 +188,13 @@ class SelectorManager {
     private fun canReplyIn(chat: TLRPC.Chat?) =
         chat == null || !chat.noforwards || ChatObject.canWriteToChat(chat)
 
-    private fun updateReplyButtonVisibility(chatActivity: Any, shouldShow: Boolean) {
+    private fun updateReplyButtonVisibility(chatActivity: ChatActivity) {
+        // with several messages selected the client has already hidden the button
+        if (selectedMessagesOf(chatActivity)[0].size() != 1) return
+
+        val shouldShow = chatActivity.chatMode != ChatActivity.MODE_SCHEDULED
+            && canReplyIn(chatActivity.currentChat)
+
         if (isNewButtonsLayout)
             chatActivity.getFieldValue("actionsButtonsLayout")
                 ?.safeInvoke("showReplyButton", 2, shouldShow, true)
@@ -206,88 +203,9 @@ class SelectorManager {
                 .visibility = if (shouldShow) View.VISIBLE else View.GONE
     }
 
-    private fun updateSelectButtonVisibility(chatActivity: Any) {
-        try {
-            @Suppress("UNCHECKED_CAST")
-            val messages = chatActivity.getFieldValue("messages") as ArrayList<MessageObject>
-
-            @Suppress("UNCHECKED_CAST")
-            val javaMsgsMain =
-                (chatActivity.getFieldValue("selectedMessagesIds") as Array<SparseArray<MessageObject>>)[0]
-
-            var shouldShow = false
-            if (javaMsgsMain.size() > 1) {
-                val begin = javaMsgsMain.keyAt(0)
-                val end = javaMsgsMain.keyAt(javaMsgsMain.size() - 1)
-
-                for (message in messages) {
-                    val msgId = message.messageOwner.id
-
-                    if (msgId <= 0) continue
-                    if (msgId >= end) continue
-                    if (msgId <= begin) break
-
-                    if (javaMsgsMain.indexOfKey(msgId) < 0) {
-                        val contentType = message.getFieldValue("contentType") as Int
-                        if (contentType == 0) {
-                            shouldShow = true
-                            break
-                        }
-                    }
-                }
-            }
-
-            if (isNewButtonsLayout) {
-                chatActivity.getFieldValue("actionsButtonsLayout")
-                    ?.safeInvoke("showSelectButton", 2, shouldShow, true)
-            } else {
-                chatActivity.getFieldValue("selectButtonAnimation")?.safeInvoke("cancel")
-
-                (chatActivity.getFieldValue("selectButton") as View).apply {
-                    visibility = if (shouldShow) View.VISIBLE else View.GONE
-                    alpha = if (shouldShow) 0.0f else 1.0f
-                    scaleY = if (shouldShow) 0.0f else 1.0f
-                }
-            }
-        } catch (e: Throwable) {
-            PluginCore.log("Error in updateSelectButtonVisibility:", exception = e)
-        }
-    }
-
-    private fun cancelSelectionMode(chatActivity: Any) {
-        chatActivity.safeInvoke("hideActionMode")
-        chatActivity.safeInvoke("updatePinnedMessageView", 1, true)
-    }
-
-    private fun decrementCantForwardCount(chatActivity: Any) {
-        val count = (chatActivity.getFieldValue("cantForwardMessagesCount") as Int) - 2
-        chatActivity.setFieldValue("cantForwardMessagesCount", count)
-
-        if (count == 0) {
-            val forwardButton = chatActivity.getFieldValue("forwardButton") as View?
-            forwardButton?.apply {
-                isEnabled = true
-                alpha = 1.0f
-            }
-        }
-    }
-
-    private fun decrementCantDeleteCount(chatActivity: Any) {
-        val count = (chatActivity.getFieldValue("cantDeleteMessagesCount") as Int) - 2
-        chatActivity.setFieldValue("cantDeleteMessagesCount", count)
-
-        if (count == 0) {
-            val deleteItem = chatActivity.getFieldValue("deleteItem") as View?
-            deleteItem?.visibility = View.VISIBLE
-        }
-    }
-
-    fun clearMessageStorage() {
-        @Suppress("UNCHECKED_CAST")
-        if (realMessagesArray != null)
-            (realMessagesArray as SparseArray<*>).clear()
-        if (fakeMessagesArray != null)
-            (fakeMessagesArray as SparseArray<*>).clear()
-        seededGroupIds.clear()
+    private companion object {
+        const val SELECTION_LIMIT = 100
+        const val ACTION_MODE_UPDATE_INTERVAL = 100L
+        const val CHAT_ACTIVITY_INNER_PREFIX = "org.telegram.ui.ChatActivity$"
     }
 }
