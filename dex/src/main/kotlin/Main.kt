@@ -11,6 +11,10 @@ object PluginCore {
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
     private var pluginId: String? = null
 
+    val isAyuBased = runCatching {
+        Class.forName("com.radolyn.ayugram.database.AyuDatabase", false, javaClass.classLoader)
+    }.isSuccess
+
     @JvmField
     val selectorHook = SelectorManager()
 
@@ -24,7 +28,7 @@ object PluginCore {
         this.pluginId = pluginId
 
         selectorHook.setupHook(checkPluginId(pluginId))
-        smartForward.setupHook()
+        if (!isAyuBased) smartForward.setupHook()
         log("DEX v$DEX_VERSION loaded.")
     }
 

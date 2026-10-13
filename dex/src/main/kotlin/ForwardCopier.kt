@@ -386,19 +386,19 @@ object ForwardCopier {
             }.getOrNull()
         }
 
-        private fun cancel() {
-            pending.values.forEach { msg ->
-                val owner = msg.messageOwner
-
-                when (val media = owner.media) {
-                    is TLRPC.TL_messageMediaDocument -> fileLoader.cancelLoadFile(media.document, false)
-                    is TLRPC.TL_messageMediaPhoto -> owner.photoSize()?.let { fileLoader.cancelLoadFile(it, false) }
-                }
-            }
-
-            pending.clear()
-            release()
-        }
+//        private fun cancel() {
+//            pending.values.forEach { msg ->
+//                val owner = msg.messageOwner
+//
+//                when (val media = owner.media) {
+//                    is TLRPC.TL_messageMediaDocument -> fileLoader.cancelLoadFile(media.document, false)
+//                    is TLRPC.TL_messageMediaPhoto -> owner.photoSize()?.let { fileLoader.cancelLoadFile(it, false) }
+//                }
+//            }
+//
+//            pending.clear()
+//            release()
+//        }
 
         private fun release() {
             OBSERVED_EVENTS.forEach { notificationCenter.removeObserver(this, it) }

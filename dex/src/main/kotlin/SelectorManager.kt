@@ -67,7 +67,6 @@ class SelectorManager {
                     if (multiSelectorHookApplied)
                         return@before
 
-                    // the dialogs and topics lists start their own multiselect through the same method
                     val multiSelectionListener = multiSelectParam.args[2]
                     if (!multiSelectionListener.javaClass.name.startsWith(CHAT_ACTIVITY_INNER_PREFIX))
                         return@before
@@ -97,11 +96,6 @@ class SelectorManager {
         }
     }
 
-    // addToSelectedMessages refuses to select a message when
-    // selectedMessagesIds[0].size() + selectedMessagesIds[1].size() >= SELECTION_LIMIT.
-    // These arrays report an empty selection from the moment the method is entered until it
-    // puts or removes a message, which is exactly when it makes that check. Everything else,
-    // the rest of the method included, sees the real selection.
     private inner class UncappedMessages(source: SelectedMessages) : SelectedMessages() {
         val realSize get() = super.size()
 
@@ -137,9 +131,6 @@ class SelectorManager {
 
         limitCheckPending = true
 
-        // The action mode update at the end of addToSelectedMessages walks the whole selection,
-        // so for a big one it is run at most once per ACTION_MODE_UPDATE_INTERVAL
-        // instead of once per message.
         if (param.args[2] == true) {
             param.args[2] = false
             scheduleActionModeUpdate(chatActivity, param.method)
@@ -183,13 +174,10 @@ class SelectorManager {
         }, delay.coerceAtLeast(0))
     }
 
-    // A reply from a chat the user cannot write to is sent to another chat,
-    // which the server rejects for chats with restricted forwards.
     private fun canReplyIn(chat: TLRPC.Chat?) =
         chat == null || !chat.noforwards || ChatObject.canWriteToChat(chat)
 
     private fun updateReplyButtonVisibility(chatActivity: ChatActivity) {
-        // with several messages selected the client has already hidden the button
         if (selectedMessagesOf(chatActivity)[0].size() != 1) return
 
         val shouldShow = chatActivity.chatMode != ChatActivity.MODE_SCHEDULED

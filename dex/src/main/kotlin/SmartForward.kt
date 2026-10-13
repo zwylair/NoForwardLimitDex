@@ -66,8 +66,6 @@ class SmartForwardManager {
             .forEach { method -> method.before { it.result = false } }
     }
 
-    // lifts messageOwner.noforwards only while canForwardMessage runs,
-    // so its other checks (service messages, calls, sponsored...) still apply
     private class NoForwardsFlagLifter : XC_MethodHook() {
         private val lifted = ThreadLocal<Boolean>()
 
@@ -87,8 +85,6 @@ class SmartForwardManager {
         }
     }
 
-    // reads the raw flags instead of MessagesController.is*NoForwards,
-    // because those are forced to false by the hooks above
     private fun MessageObject.isForwardRestricted(): Boolean {
         if (isSecret || isSecretMedia || isVoiceOnce || isRoundOnce) return true
         if (messageOwner?.noforwards == true || messageOwner?.ttl != 0) return true

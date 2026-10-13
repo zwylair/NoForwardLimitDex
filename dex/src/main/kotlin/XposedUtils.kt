@@ -81,8 +81,8 @@ inline fun <reified T : Any> T.findField(fieldName: String): Field? {
 inline fun <reified T : Any> T.getFieldValue(fieldName: String): Any? =
     this.findField(fieldName)?.get(this)
 
-inline fun <reified T : Any> T.setFieldValue(fieldName: String, value: Any?) =
-    this.findField(fieldName)?.set(this, value)
+//inline fun <reified T : Any> T.setFieldValue(fieldName: String, value: Any?) =
+//    this.findField(fieldName)?.set(this, value)
 
 inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0): Method? {
     val targetClass: Class<*> = if (this is Class<*>) this else this.javaClass
