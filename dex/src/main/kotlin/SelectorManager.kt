@@ -13,15 +13,18 @@ import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ChatActivity
 import java.lang.reflect.Field
 import java.lang.reflect.Member
-import kotlin.math.roundToInt
 
 private typealias SelectedMessages = ChatActivity.SparseArrayWithTouch<MessageObject>
 
 class SelectorManager {
     private val isNewButtonsLayout = AppUtils.compareVersions(">=",BuildVars.BUILD_VERSION_STRING, "12.2.0")
 
+    @Volatile
+    var scrollSpeed = 1.0
+
     private var scrollStartTime = 0L
     private var lastScrollTime = 0L
+    private var scrollRemainder = 0.0
     private var multiSelectorHookApplied = false
 
     private lateinit var selectedMessagesIdsField: Field
@@ -78,15 +81,21 @@ class SelectorManager {
                         .before {
                             val now = System.currentTimeMillis()
 
-                            if (now - lastScrollTime > 100)
+                            if (now - lastScrollTime > 100) {
                                 scrollStartTime = now
+                                scrollRemainder = 0.0
+                            }
                             lastScrollTime = now
 
                             val originalDy = it.args[0] as Int
                             val duration = now - scrollStartTime
 
-                            val factor = 1.0f + (duration / 2_000f).coerceAtMost(2.5f)
-                            it.args[0] = (originalDy * factor).roundToInt()
+                            val factor = scrollSpeed * (1.0 + (duration / 2_000.0).coerceAtMost(2.5))
+                            val scaled = originalDy * factor + scrollRemainder
+                            val step = scaled.toInt()
+
+                            scrollRemainder = scaled - step
+                            it.args[0] = step
                         }
 
                     multiSelectorHookApplied = true

@@ -5,7 +5,7 @@ import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
 
 object PluginCore {
-    const val DEX_VERSION = "1.0.3"
+    const val DEX_VERSION = "1.0.4"
 
     var appContext: Context? = null
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
@@ -30,6 +30,12 @@ object PluginCore {
         selectorHook.setupHook(checkPluginId(pluginId))
         if (!isAyuBased) smartForward.setupHook()
         log("DEX v$DEX_VERSION loaded.")
+    }
+
+    @Suppress("unused")
+    @JvmStatic
+    fun setScrollSpeed(value: Double) {
+        selectorHook.scrollSpeed = value
     }
 
     @Suppress("unused")
