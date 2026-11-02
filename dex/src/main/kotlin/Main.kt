@@ -5,7 +5,7 @@ import com.exteragram.messenger.utils.AppUtils
 import de.robv.android.xposed.XC_MethodHook
 
 object PluginCore {
-    const val DEX_VERSION = "1.0.4"
+    const val DEX_VERSION = "1.0.5"
 
     var appContext: Context? = null
     var unhookObjs: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
@@ -19,6 +19,9 @@ object PluginCore {
     val selectorHook = SelectorManager()
 
     @JvmField
+    val sharedMediaSelector = SharedMediaSelector()
+
+    @JvmField
     val smartForward = SmartForwardManager()
 
     @Suppress("unused")
@@ -27,7 +30,9 @@ object PluginCore {
         appContext = context
         this.pluginId = pluginId
 
-        selectorHook.setupHook(checkPluginId(pluginId))
+        val verified = checkPluginId(pluginId)
+        selectorHook.setupHook(verified)
+        sharedMediaSelector.setupHook(verified)
         if (!isAyuBased) smartForward.setupHook()
         log("DEX v$DEX_VERSION loaded.")
     }
