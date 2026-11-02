@@ -22,6 +22,9 @@ object PluginCore {
     val sharedMediaSelector = SharedMediaSelector()
 
     @JvmField
+    val forwardThrottler = ForwardThrottler()
+
+    @JvmField
     val smartForward = SmartForwardManager()
 
     @Suppress("unused")
@@ -33,6 +36,7 @@ object PluginCore {
         val verified = checkPluginId(pluginId)
         selectorHook.setupHook(verified)
         sharedMediaSelector.setupHook(verified)
+        forwardThrottler.setupHook()
         if (!isAyuBased) smartForward.setupHook()
         log("DEX v$DEX_VERSION loaded.")
     }
