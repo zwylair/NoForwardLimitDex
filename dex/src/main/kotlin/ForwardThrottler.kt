@@ -8,7 +8,7 @@ class ForwardThrottler {
     fun setupHook() {
         try {
             val sendMessage = findClass("org.telegram.messenger.SendMessagesHelper")
-                ?.findMethod("sendMessage", FORWARD_ARGS_COUNT)
+                ?.findMaxArgsMethod("sendMessage")
                 ?: return
 
             sendMessage.before { param ->
@@ -38,7 +38,6 @@ class ForwardThrottler {
     }
 
     private companion object {
-        const val FORWARD_ARGS_COUNT = 12
         const val BATCH_SIZE = 100
         const val BATCH_DELAY_MS = 3_000L
     }

@@ -39,7 +39,7 @@ class SelectorManager {
                 .apply { isAccessible = true }
 
             val selectorMethod = findClass("org.telegram.ui.ChatActivity")!!
-                .findMethod("addToSelectedMessages", 3)!!
+                .findMaxArgsMethod("addToSelectedMessages")!!
 
             hook(selectorMethod, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {

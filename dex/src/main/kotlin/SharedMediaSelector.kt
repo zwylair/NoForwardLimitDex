@@ -19,7 +19,7 @@ class SharedMediaSelector {
                 .apply { isAccessible = true }
 
             val itemClickMethod = findClass("org.telegram.ui.Components.SharedMediaLayout")!!
-                .findMethod("onItemClick", 5)!!
+                .findMaxArgsMethod("onItemClick")!!
 
             hook(itemClickMethod, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {

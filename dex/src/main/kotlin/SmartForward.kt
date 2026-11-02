@@ -20,7 +20,7 @@ class SmartForwardManager {
     //     monoForumPeerId, suggestionParams)
     private fun hookForward() {
         val sendMessage = findClass("org.telegram.messenger.SendMessagesHelper")
-            ?.findMethod("sendMessage", FORWARD_ARGS_COUNT)
+            ?.findMaxArgsMethod("sendMessage")
             ?: return
 
         sendMessage.before { param ->
@@ -100,8 +100,6 @@ class SmartForwardManager {
     }
 
     private companion object {
-        const val FORWARD_ARGS_COUNT = 12
-
         val NO_FORWARDS_CHECKS = listOf("isChatNoForwards", "isUserNoForwards", "isPeerNoForwards")
     }
 }

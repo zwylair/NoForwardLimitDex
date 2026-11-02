@@ -100,6 +100,22 @@ inline fun <reified T : Any> T.findMethod(methodName: String, argsCount: Int = 0
     }
 }
 
+fun Class<*>.findMaxArgsMethod(methodName: String): Method? {
+    val cacheKey = "$name#$methodName(max)"
+
+    return methodsCache.getOrPut(cacheKey) {
+        Optional.ofNullable(
+            declaredMethods
+                .filter { it.name == methodName }
+                .maxByOrNull { it.parameterCount }
+                ?.apply { isAccessible = true }
+        )
+    }.orElseGet {
+        PluginCore.log("Method '$methodName' not found for class $name.")
+        null
+    }
+}
+
 fun Class<*>.findMethods(methodName: String): List<Method> =
     declaredMethods
         .filter { it.name == methodName }
