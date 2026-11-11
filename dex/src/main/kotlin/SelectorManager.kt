@@ -78,31 +78,32 @@ class SelectorManager {
                         .before { it.result = false }
 
                     multiSelectionListener.findMethod("scrollBy", 1)!!
-                        .before {
-                            val now = System.currentTimeMillis()
-
-                            if (now - lastScrollTime > 100) {
-                                scrollStartTime = now
-                                scrollRemainder = 0.0
-                            }
-                            lastScrollTime = now
-
-                            val originalDy = it.args[0] as Int
-                            val duration = now - scrollStartTime
-
-                            val factor = scrollSpeed * (1.0 + (duration / 2_000.0).coerceAtMost(2.5))
-                            val scaled = originalDy * factor + scrollRemainder
-                            val step = scaled.toInt()
-
-                            scrollRemainder = scaled - step
-                            it.args[0] = step
-                        }
+                        .before { it.args[0] = scaleScroll(it.args[0] as Int) }
 
                     multiSelectorHookApplied = true
                 }
         } catch (e: Throwable) {
             PluginCore.log("SelectorHook.setupHook failed:", exception = e)
         }
+    }
+
+    fun scaleScroll(dy: Int): Int {
+        val now = System.currentTimeMillis()
+
+        if (now - lastScrollTime > 100) {
+            scrollStartTime = now
+            scrollRemainder = 0.0
+        }
+        lastScrollTime = now
+
+        val duration = now - scrollStartTime
+
+        val factor = scrollSpeed * (1.0 + (duration / 2_000.0).coerceAtMost(2.5))
+        val scaled = dy * factor + scrollRemainder
+        val step = scaled.toInt()
+
+        scrollRemainder = scaled - step
+        return step
     }
 
     private inner class UncappedMessages(source: SelectedMessages) : SelectedMessages() {
