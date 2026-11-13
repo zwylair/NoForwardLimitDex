@@ -3,6 +3,7 @@ package org.zwylair.nfldex
 import org.telegram.messenger.AccountInstance
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.FileLoader
+import org.telegram.messenger.ImageLoader
 import org.telegram.messenger.ImageLocation
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.MessageObject
@@ -171,6 +172,8 @@ object ForwardCopier {
                 )
             }
 
+            MessageObject.isGifDocument(document) -> sendGif(account, msg, document, file, target)
+
             MessageObject.isRoundVideoMessage(owner) -> SendMessagesHelper.prepareSendingVideo(
                 account, path, buildRoundVideoInfo(document, path), null, null, target.peer,
                 replyTo, replyTo, null, null, null, 0, null,
@@ -184,6 +187,66 @@ object ForwardCopier {
             )
         }
     }
+
+    private fun sendGif(
+        account: AccountInstance,
+        msg: MessageObject,
+        original: TLRPC.Document,
+        file: File,
+        target: ForwardTarget,
+    ) {
+        val owner = msg.messageOwner
+        val replyTo = target.replyToTopMsg
+        val isImageGif = original.mime_type == "image/gif"
+
+        val document = TLRPC.TL_document().apply {
+            id = 0L
+            file_reference = ByteArray(0)
+            date = account.connectionsManager.currentTime
+            dc_id = 0
+            size = file.length()
+            mime_type = if (isImageGif) "image/gif" else "video/mp4"
+
+            attributes.add(TLRPC.TL_documentAttributeFilename().apply { file_name = "animation.gif" })
+            attributes.add(TLRPC.TL_documentAttributeAnimated())
+
+            if (!isImageGif) {
+                val source = original.attributes.firstOrNull { it is TLRPC.TL_documentAttributeVideo }
+                attributes.add(TLRPC.TL_documentAttributeVideo().apply {
+                    supports_streaming = true
+                    nosound = true
+                    w = source?.w ?: 0
+                    h = source?.h ?: 0
+                    duration = source?.duration ?: 0.0
+                })
+            }
+
+            buildGifThumbnail(file.absolutePath, isImageGif)?.let {
+                thumbs.add(it)
+                flags = flags or 1
+            }
+        }
+
+        account.sendMessagesHelper.sendMessage(
+            SendMessageParams.of(
+                document, null, file.absolutePath, target.peer, replyTo, replyTo,
+                owner.message, owner.entities, null, HashMap<String, String>(),
+                target.notify, target.scheduleDate, 0, 0, msg, null, false, false,
+            )
+        )
+    }
+
+    private fun buildGifThumbnail(path: String, isImageGif: Boolean): TLRPC.PhotoSize? = runCatching {
+        val bitmap = if (isImageGif) {
+            ImageLoader.loadBitmap(path, null, 320f, 320f, true)
+        } else {
+            SendMessagesHelper.createVideoThumbnail(path, 1)
+        } ?: return null
+
+        ImageLoader.scaleAndSaveImage(bitmap, 320f, 320f, 80, false).also { bitmap.recycle() }
+    }.onFailure {
+        PluginCore.log("ForwardCopier: gif thumbnail failed:", exception = it)
+    }.getOrNull()
 
     private fun buildRoundVideoInfo(document: TLRPC.Document, path: String): VideoEditedInfo {
         val videoAttribute = document.attributes.firstOrNull { it is TLRPC.TL_documentAttributeVideo }
