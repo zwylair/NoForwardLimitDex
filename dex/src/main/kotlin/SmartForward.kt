@@ -4,6 +4,7 @@ import de.robv.android.xposed.XC_MethodHook
 import org.telegram.messenger.AccountInstance
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.MessagesController
+import org.telegram.tgnet.TLRPC
 
 class SmartForwardManager {
     fun setupHook() {
@@ -92,14 +93,24 @@ class SmartForwardManager {
         val controller = MessagesController.getInstance(currentAccount)
         val dialogId = dialogId
 
-        if (dialogId < 0)
-            return controller.getChat(-dialogId)?.noforwards == true
+        if (dialogId < 0) {
+            val chat = controller.getChat(-dialogId) ?: return false
+            return chat.noforwards || controller.isRestrictedHere(chat.restriction_reason)
+        }
 
         val userFull = controller.getUserFull(dialogId) ?: return false
         return userFull.noforwards_my_enabled || userFull.noforwards_peer_enabled
     }
 
+    private fun MessagesController.isRestrictedHere(reasons: List<TLRPC.RestrictionReason>?): Boolean =
+        reasons.orEmpty().any { reason ->
+            reason.platform in RESTRICTED_PLATFORMS &&
+                reason.reason != "sensitive" &&
+                ignoreRestrictionReasons?.contains(reason.reason) != true
+        }
+
     private companion object {
         val NO_FORWARDS_CHECKS = listOf("isChatNoForwards", "isUserNoForwards", "isPeerNoForwards")
+        val RESTRICTED_PLATFORMS = setOf("all", "android", "android-all")
     }
 }
