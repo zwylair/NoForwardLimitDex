@@ -1,4 +1,6 @@
 pluginManagement {
+    includeBuild(providers.gradleProperty("buildlogic.dir").getOrElse("../DexBuildLogic"))
+
     repositories {
         google()
         mavenCentral()
@@ -6,18 +8,8 @@ pluginManagement {
     }
 }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-
-        // exterahook is published only to the maven mirror inside the host checkout
-        maven {
-            url = uri("${providers.gradleProperty("host.dir").get()}/Tools/maven")
-            content { includeGroupByRegex("""dev\.exterahook(\..+)?""") }
-        }
-    }
+plugins {
+    id("zwy.dex-settings")
 }
 
 rootProject.name = "NoForwardLimitDex"

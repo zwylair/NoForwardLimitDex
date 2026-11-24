@@ -1,0 +1,14 @@
+name: Build DEX
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dex:
+    uses: zwylair/DexBuildLogic/.github/workflows/build-dex.yml@main
+    permissions:
+      contents: write
